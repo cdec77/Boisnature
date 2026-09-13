@@ -37,7 +37,7 @@ Si un vrai classement persistant multi-appareils (y compris iPhone) devient indi
 
 Les formats `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp` et `avif` sont lus directement. Les fichiers **HEIC/HEIF** sont convertis temporairement en JPEG en mémoire par `heic2any` ; ni l'original ni la conversion ne sont enregistrés par l'application. Le convertisseur est inclus dans le projet et fonctionne hors connexion.
 
-Sur Android, l'application conserve le champ de sélection créé par la Galerie pendant toute la session. Cette précaution évite que Chrome révoque prématurément l'accès temporaire aux fichiers JPG ou PNG issus du fournisseur de contenus Android.
+Sur Android, l'application utilise systématiquement le sélecteur Galerie/Fichiers natif. La photo courante est immédiatement lue dans un tampon mémoire temporaire, indépendant de l'autorisation Android, puis libérée au changement de diapositive. Seule la photo affichée occupe ce tampon ; elle n'est jamais enregistrée dans le navigateur.
 
 ## Fonctionnalités
 

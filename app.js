@@ -27,9 +27,11 @@ const DEFAULT_ROOMS = [
 const EMOJI_CHOICES = ['🛏️','🍽️','🛋️','🪑','🛁','🚪','🏡','🌴','🌺','🪟','🧺','📚','🧸','🚗','🏖️','🎨','🧹','🌿','🔧','📦'];
 
 const IMAGE_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?)$/i;
+const isImageFile = file => IMAGE_RE.test(file.name || '') || /^image\//i.test(file.type || '');
 
-const HAS_FS_ACCESS = 'showDirectoryPicker' in window;
-const HAS_FILE_PICKER = 'showOpenFilePicker' in window;
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
+const HAS_FS_ACCESS = !IS_ANDROID && 'showDirectoryPicker' in window;
+const HAS_FILE_PICKER = !IS_ANDROID && 'showOpenFilePicker' in window;
 
 /* ---------- État global ---------- */
 
@@ -40,6 +42,7 @@ let currentIndex = 0;
 let currentObjectUrl = null;
 let isPlaying = false;
 let playTimer = null;
+let slideRequestId = 0;
 const sessionFilesByRoom = new Map();
 const sessionInputsByRoom = new Map();
 
@@ -266,7 +269,7 @@ async function ingestManualPhotos(roomId, files) {
   const session = sessionFilesByRoom.get(room.id) || [];
   const existingKeys = new Set(session.map(f => f.name + ':' + f.size));
   const items = files
-    .filter(f => IMAGE_RE.test(f.name))
+    .filter(isImageFile)
     .filter(f => !existingKeys.has(f.name + ':' + f.size));
   session.push(...items);
   sessionFilesByRoom.set(room.id, session);
@@ -287,9 +290,9 @@ $('fileInputFolder').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!files.length) return;
 
-  sessionFilesByRoom.set(room.id, files.filter(f => IMAGE_RE.test(f.name)));
+  sessionFilesByRoom.set(room.id, files.filter(isImageFile));
   currentFiles = files
-    .filter(f => IMAGE_RE.test(f.name))
+    .filter(isImageFile)
     .map(f => ({ name: f.name, path: f.webkitRelativePath || f.name, origin:{kind:'session', file:f}, getFile: () => Promise.resolve(f) }))
     .sort((a, b) => a.path.localeCompare(b.path, 'fr'));
 
@@ -446,32 +449,54 @@ function releaseCurrentImage() {
 
 async function showSlide(i) {
   if (!currentFiles.length) return;
+  const requestId = ++slideRequestId;
   currentIndex = ((i % currentFiles.length) + currentFiles.length) % currentFiles.length;
   const item = currentFiles[currentIndex];
 
   const img = $('slideImg');
+  const errorBox = $('slideError');
+  errorBox.classList.add('panel--hidden');
   img.classList.remove('img-error');
 
   try {
     const file = await item.getFile();
+    const bytes = await file.arrayBuffer();
+    if (requestId !== slideRequestId) return;
+    const type = file.type || mimeFromName(item.name);
+    const localBlob = new Blob([bytes], { type });
     const isHeic = /\.(heic|heif)$/i.test(item.name) || /image\/(heic|heif)/i.test(file.type);
-    let displayBlob = file;
+    let displayBlob = localBlob;
     if (isHeic) {
       if (typeof window.heic2any !== 'function') throw new Error('Le convertisseur HEIC n’est pas disponible hors connexion.');
-      displayBlob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      displayBlob = await window.heic2any({ blob: localBlob, toType: 'image/jpeg', quality: 0.9 });
       if (Array.isArray(displayBlob)) displayBlob = displayBlob[0];
     }
+    if (requestId !== slideRequestId) return;
     releaseCurrentImage();
     currentObjectUrl = URL.createObjectURL(displayBlob);
-    img.onerror = () => { img.alt = `Image illisible dans ce navigateur : ${item.name}`; };
+    img.onerror = () => {
+      errorBox.textContent = `Impossible d’afficher « ${item.name} » (${type || 'format inconnu'}).`;
+      errorBox.classList.remove('panel--hidden');
+    };
+    img.onload = () => errorBox.classList.add('panel--hidden');
     img.src = currentObjectUrl;
     img.alt = item.name;
   } catch (e) {
     img.removeAttribute('src');
-    img.alt = `Impossible de lire « ${item.name} » (fichier déplacé ou supprimé ?)`;
+    errorBox.textContent = `Impossible de lire « ${item.name} » : ${e.message || 'accès refusé'}`;
+    errorBox.classList.remove('panel--hidden');
   }
 
   $('counter').textContent = `${currentIndex + 1} / ${currentFiles.length}`;
+}
+
+function mimeFromName(name) {
+  if (/\.png$/i.test(name)) return 'image/png';
+  if (/\.webp$/i.test(name)) return 'image/webp';
+  if (/\.gif$/i.test(name)) return 'image/gif';
+  if (/\.avif$/i.test(name)) return 'image/avif';
+  if (/\.hei[cf]$/i.test(name)) return 'image/heic';
+  return 'image/jpeg';
 }
 
 function nextSlide() { showSlide(currentIndex + 1); }
