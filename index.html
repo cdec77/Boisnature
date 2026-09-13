@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Maison en Photos</title>
+<meta name="description" content="Classez et projetez vos photos de pièces meublées, pièce par pièce.">
+<meta name="theme-color" content="#5A3A22">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MaPhotoDeco">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Barre des pièces -->
+  <header class="room-dock" aria-label="Pièces de la maison">
+    <div class="rope"></div>
+    <nav id="roomTabs" class="room-tabs" role="tablist" aria-label="Choisir une pièce"></nav>
+    <button id="addRoomBtn" class="signpost signpost--add" title="Ajouter une pièce" aria-label="Ajouter une pièce">
+      <span class="signpost__icon">＋</span>
+      <span class="signpost__label">Pièce</span>
+    </button>
+  </header>
+
+  <!-- Scène principale -->
+  <main id="stage" class="stage">
+
+    <div id="emptyState" class="panel panel--empty">
+      <div class="panel__inner">
+        <p class="panel__eyebrow">🌺 Bienvenue</p>
+        <h1>Choisissez ou créez une pièce</h1>
+        <p>Chaque pièce de la maison garde en mémoire son propre dossier de photos.</p>
+      </div>
+    </div>
+
+    <div id="noSourceState" class="panel panel--hidden">
+      <div class="panel__inner">
+        <p class="panel__eyebrow" id="noSourceEmoji">🏠</p>
+        <h1 id="noSourceTitle">Alimenter cette pièce</h1>
+        <p>Les photos restent sur votre appareil : l'application va simplement les retrouver à la demande, sans jamais les copier.</p>
+        <div class="source-buttons">
+          <button id="pickFolderBtn" class="btn btn--primary">📁 Choisir un dossier (avec sous-dossiers)</button>
+          <button id="pickFilesBtn" class="btn btn--secondary">🖼️ Choisir des photos</button>
+        </div>
+        <p class="hint" id="platformHint"></p>
+      </div>
+    </div>
+
+    <div id="permissionState" class="panel panel--hidden">
+      <div class="panel__inner">
+        <p class="panel__eyebrow">🔑</p>
+        <h1>On a besoin de votre accord</h1>
+        <p>Le navigateur redemande une autorisation à chaque nouvelle visite, pour votre sécurité. Le dossier choisi précédemment reste en mémoire.</p>
+        <button id="reauthorizeBtn" class="btn btn--primary">Retrouver le dossier « <span id="reauthRoomName"></span> »</button>
+        <button id="forgetSourceBtn" class="btn btn--ghost">Choisir un autre dossier</button>
+      </div>
+    </div>
+
+    <div id="loadingState" class="panel panel--hidden">
+      <div class="panel__inner">
+        <p class="panel__eyebrow">🐚</p>
+        <h1>Recherche des photos…</h1>
+        <p id="loadingDetail"></p>
+      </div>
+    </div>
+
+    <div id="noPhotosState" class="panel panel--hidden">
+      <div class="panel__inner">
+        <p class="panel__eyebrow">🦀</p>
+        <h1>Aucune photo trouvée ici</h1>
+        <p>Le dossier ne contient pas d'image reconnue (jpg, png, webp…).</p>
+        <button id="changeSourceEmptyBtn" class="btn btn--secondary">Changer de source</button>
+      </div>
+    </div>
+
+    <!-- Diaporama -->
+    <div id="slideshow" class="slideshow panel--hidden">
+      <div class="slideshow__frame">
+        <img id="slideImg" class="slideshow__img" alt="">
+        <button id="prevBtn" class="nav-arrow nav-arrow--prev" aria-label="Photo précédente">‹</button>
+        <button id="nextBtn" class="nav-arrow nav-arrow--next" aria-label="Photo suivante">›</button>
+      </div>
+      <div class="slideshow__bar">
+        <button id="playBtn" class="icon-btn" aria-label="Lecture automatique">▶</button>
+        <span id="counter" class="counter">1 / 1</span>
+        <input id="speedRange" type="range" min="2" max="12" step="1" value="4" title="Vitesse du diaporama (secondes)">
+        <button id="shuffleBtn" class="icon-btn" aria-label="Mélanger" title="Mélanger l'ordre">🔀</button>
+        <button id="rescanBtn" class="icon-btn" aria-label="Rafraîchir" title="Relire le dossier">⟳</button>
+        <button id="sourceBtn" class="icon-btn" aria-label="Changer de source" title="Changer de source">📁</button>
+        <button id="fullscreenBtn" class="icon-btn" aria-label="Plein écran" title="Plein écran">⛶</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Modale générique -->
+<div id="modalOverlay" class="modal-overlay panel--hidden">
+  <div class="modal" role="dialog" aria-modal="true">
+    <h2 id="modalTitle">Titre</h2>
+    <div id="modalBody"></div>
+    <div class="modal__actions">
+      <button id="modalCancel" class="btn btn--ghost">Annuler</button>
+      <button id="modalConfirm" class="btn btn--primary">Valider</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="fileInputPhotos" accept="image/*" multiple hidden>
+<input type="file" id="fileInputFolder" webkitdirectory directory multiple hidden>
+
+<script src="app.js"></script>
+</body>
+</html>

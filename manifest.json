@@ -1,0 +1,17 @@
+{
+  "name": "Maison en Photos",
+  "short_name": "MaPhotoDeco",
+  "description": "Vos photos de pièces meublées, classées et projetées en plein écran.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#17A9A0",
+  "theme_color": "#5A3A22",
+  "lang": "fr",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
