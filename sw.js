@@ -2,7 +2,7 @@
    Les photos ne sont jamais interceptées ni mises en cache : elles sont
    lues en direct depuis l'appareil de l'utilisateur via des blob: URLs. */
 
-const CACHE_NAME = 'maison-photos-shell-v2';
+const CACHE_NAME = 'maison-photos-shell-v3';
 
 const SHELL_FILES = [
   './',
@@ -10,6 +10,7 @@ const SHELL_FILES = [
   './style.css',
   './app.js',
   './manifest.json',
+  './heic2any.min.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/maskable-192.png',

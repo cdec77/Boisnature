@@ -35,7 +35,9 @@ Si un vrai classement persistant multi-appareils (y compris iPhone) devient indi
 
 ## Formats d'image
 
-Les formats `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `avif` s'affichent partout. Le format **HEIC/HEIF** (par défaut sur iPhone) s'affiche nativement dans **Safari**, mais pas dans **Chrome/Edge** : sur ces navigateurs, une photo HEIC apparaîtra comme illisible. Si vous alimentez l'app depuis un PC avec des photos venant d'un iPhone, pensez à les exporter en JPEG (réglage possible dans l'app Photos de l'iPhone : *Réglages → Appareil photo → Formats → « Le plus compatible »*).
+Les formats `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp` et `avif` sont lus directement. Les fichiers **HEIC/HEIF** sont convertis temporairement en JPEG en mémoire par `heic2any` ; ni l'original ni la conversion ne sont enregistrés par l'application. Le convertisseur est inclus dans le projet et fonctionne hors connexion.
+
+Sur Android, l'application conserve le champ de sélection créé par la Galerie pendant toute la session. Cette précaution évite que Chrome révoque prématurément l'accès temporaire aux fichiers JPG ou PNG issus du fournisseur de contenus Android.
 
 ## Fonctionnalités
 

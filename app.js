@@ -41,6 +41,7 @@ let currentObjectUrl = null;
 let isPlaying = false;
 let playTimer = null;
 const sessionFilesByRoom = new Map();
+const sessionInputsByRoom = new Map();
 
 /* ---------- Petits utilitaires DOM ---------- */
 
@@ -243,15 +244,23 @@ async function pickPhotos() {
       await scanAndShow(room, record);
     } catch (e) { if (e.name !== 'AbortError') console.error(e); }
   } else {
-    $('fileInputPhotos').click();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,.heic,.heif';
+    input.multiple = true;
+    input.hidden = true;
+    document.body.appendChild(input);
+    const retainedInputs = sessionInputsByRoom.get(room.id) || [];
+    retainedInputs.push(input);
+    sessionInputsByRoom.set(room.id, retainedInputs);
+    input.addEventListener('change', () => ingestManualPhotos(room.id, Array.from(input.files || [])), { once: true });
+    input.click();
   }
 }
 
-$('fileInputPhotos').addEventListener('change', async (e) => {
-  const room = getActiveRoom();
+async function ingestManualPhotos(roomId, files) {
+  const room = rooms.find(r => r.id === roomId);
   if (!room) return;
-  const files = Array.from(e.target.files || []);
-  e.target.value = '';
   if (!files.length) return;
 
   const session = sessionFilesByRoom.get(room.id) || [];
@@ -261,12 +270,13 @@ $('fileInputPhotos').addEventListener('change', async (e) => {
     .filter(f => !existingKeys.has(f.name + ':' + f.size));
   session.push(...items);
   sessionFilesByRoom.set(room.id, session);
+  if (activeRoomId !== room.id) return;
   currentFiles = currentFiles.concat(items.map(f => ({ name:f.name, path:f.name, size:f.size, origin:{kind:'session', file:f}, getFile:() => Promise.resolve(f) }))).sort((a,b) => a.path.localeCompare(b.path,'fr'));
   if (!currentFiles.length) { showPanel('noPhotos'); return; }
   currentIndex = 0;
   showPanel('slideshow');
   await showSlide(0);
-});
+}
 
 /* ---------- Choix de dossier "manuel" (navigateurs sans File System Access) ---------- */
 
@@ -330,6 +340,8 @@ $('sourceBtn').addEventListener('click', async () => {
   if (!confirm(`Retirer toutes les photos de « ${room.name} » ? Les fichiers d'origine ne seront pas supprimés.`)) return;
   await idbDelete(sourceKey(room.id));
   sessionFilesByRoom.delete(room.id);
+  (sessionInputsByRoom.get(room.id) || []).forEach(input => input.remove());
+  sessionInputsByRoom.delete(room.id);
   currentFiles = [];
   showNoSource(room);
 });
@@ -442,8 +454,15 @@ async function showSlide(i) {
 
   try {
     const file = await item.getFile();
+    const isHeic = /\.(heic|heif)$/i.test(item.name) || /image\/(heic|heif)/i.test(file.type);
+    let displayBlob = file;
+    if (isHeic) {
+      if (typeof window.heic2any !== 'function') throw new Error('Le convertisseur HEIC n’est pas disponible hors connexion.');
+      displayBlob = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      if (Array.isArray(displayBlob)) displayBlob = displayBlob[0];
+    }
     releaseCurrentImage();
-    currentObjectUrl = URL.createObjectURL(file);
+    currentObjectUrl = URL.createObjectURL(displayBlob);
     img.onerror = () => { img.alt = `Image illisible dans ce navigateur : ${item.name}`; };
     img.src = currentObjectUrl;
     img.alt = item.name;
