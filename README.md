@@ -1,6 +1,6 @@
 # Maison en Photos 🌴
 
-PWA légère pour classer et projeter en plein écran des photos de pièces meublées, pièce par pièce (Chambre, Cuisine, Séjour, Salon, Salle de Bain, Vestibule, et toute pièce que vous ajoutez).
+PWA légère pour classer et projeter en plein écran des photos de pièces meublées. Les pièces initiales sont : Rangement, Salle à manger, Chambre, Salon, Terrasse, Bureau et Salle de bain.
 
 Les photos **ne sont jamais copiées** dans le navigateur : l'application garde seulement une référence vers le dossier ou les fichiers choisis sur votre appareil, et va les relire directement à chaque affichage.
 
@@ -40,7 +40,7 @@ Les formats `jpg`, `jpeg`, `png`, `webp`, `gif`, `bmp`, `avif` s'affichent parto
 ## Fonctionnalités
 
 - Barre de pièces en haut, personnalisable (ajout, renommage, changement d'icône, suppression via le petit ✎).
-- Chaque pièce garde en mémoire sa propre source de photos.
+- Chaque pièce garde en mémoire ses propres dossiers et fichiers sur Chrome/Edge, avec ajout et retrait au fil du temps. Retirer une photo de l'application ne supprime jamais le fichier d'origine.
 - Balayage **récursif** des sous-dossiers (sur les navigateurs compatibles).
 - Diaporama plein écran : flèches, glissé au doigt, clavier (← →, espace), lecture automatique à vitesse réglable, mélange aléatoire, bouton plein écran, rafraîchissement du dossier.
 - Fonctionne hors-ligne pour l'habillage de l'app (les photos, elles, sont toujours lues en direct depuis votre appareil).
@@ -55,3 +55,7 @@ sw.js           Service worker (cache de l'app uniquement)
 manifest.json   Manifeste PWA (installation, icônes)
 icons/          Icônes de l'application
 ```
+
+## Régénérer les icônes
+
+Le fichier `images2.jpg` sert de visuel source. Lancez `./generate-icons.sh images2.jpg` pour recréer les favicons, l'icône Apple Touch ainsi que les icônes PWA standard et maskables dans `icons/`. Le script nécessite ImageMagick (`magick` ou `convert`).

@@ -7,8 +7,10 @@
 <meta name="description" content="Classez et projetez vos photos de pièces meublées, pièce par pièce.">
 <meta name="theme-color" content="#5A3A22">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MaPhotoDeco">
@@ -95,7 +97,9 @@
         <input id="speedRange" type="range" min="2" max="12" step="1" value="4" title="Vitesse du diaporama (secondes)">
         <button id="shuffleBtn" class="icon-btn" aria-label="Mélanger" title="Mélanger l'ordre">🔀</button>
         <button id="rescanBtn" class="icon-btn" aria-label="Rafraîchir" title="Relire le dossier">⟳</button>
-        <button id="sourceBtn" class="icon-btn" aria-label="Changer de source" title="Changer de source">📁</button>
+        <button id="addPhotosBtn" class="icon-btn" aria-label="Ajouter des photos" title="Ajouter des photos">＋</button>
+        <button id="removePhotoBtn" class="icon-btn icon-btn--danger" aria-label="Retirer cette photo" title="Retirer cette photo de la pièce">−</button>
+        <button id="sourceBtn" class="icon-btn" aria-label="Gérer les sources" title="Retirer toutes les photos de cette pièce">📁</button>
         <button id="fullscreenBtn" class="icon-btn" aria-label="Plein écran" title="Plein écran">⛶</button>
       </div>
     </div>

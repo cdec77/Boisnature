@@ -314,7 +314,10 @@ button{ font-family: inherit; }
   background: var(--wood-mid);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 0 var(--wood-grain);
+  overflow-x:auto;
+  scrollbar-width:none;
 }
+.slideshow__bar::-webkit-scrollbar{ display:none; }
 
 .icon-btn{
   border:none;
@@ -330,6 +333,7 @@ button{ font-family: inherit; }
 }
 .icon-btn:active{ transform: translateY(1px); box-shadow:none; }
 .icon-btn.is-on{ background: var(--sun); }
+.icon-btn--danger{ background:#ffe0d8; color:#a73520; }
 
 .counter{
   color: var(--cream);

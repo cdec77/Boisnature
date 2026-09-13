@@ -15,12 +15,13 @@ const ROOMS_KEY = 'mp_rooms_v1';
 const ACTIVE_KEY = 'mp_active_room_v1';
 
 const DEFAULT_ROOMS = [
-  { id: 'chambre',   name: 'Chambre',        emoji: '🛏️' },
-  { id: 'cuisine',   name: 'Cuisine',        emoji: '🍽️' },
-  { id: 'sejour',    name: 'Séjour',         emoji: '🛋️' },
-  { id: 'salon',     name: 'Salon',          emoji: '🪑' },
-  { id: 'sdb',       name: 'Salle de Bain',  emoji: '🛁' },
-  { id: 'vestibule', name: 'Vestibule',      emoji: '🚪' },
+  { id: 'rangement', name: 'RANGEMENT', emoji: '🧺' },
+  { id: 'salle_a_manger', name: 'SALLE À MANGER', emoji: '🍽️' },
+  { id: 'chambre', name: 'CHAMBRE', emoji: '🛏️' },
+  { id: 'salon', name: 'SALON', emoji: '🛋️' },
+  { id: 'terrasse', name: 'TERRASSE', emoji: '🌴' },
+  { id: 'bureau', name: 'BUREAU', emoji: '📚' },
+  { id: 'sdb', name: 'SALLE DE BAIN', emoji: '🛁' },
 ];
 
 const EMOJI_CHOICES = ['🛏️','🍽️','🛋️','🪑','🛁','🚪','🏡','🌴','🌺','🪟','🧺','📚','🧸','🚗','🏖️','🎨','🧹','🌿','🔧','📦'];
@@ -28,6 +29,7 @@ const EMOJI_CHOICES = ['🛏️','🍽️','🛋️','🪑','🛁','🚪','🏡'
 const IMAGE_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?)$/i;
 
 const HAS_FS_ACCESS = 'showDirectoryPicker' in window;
+const HAS_FILE_PICKER = 'showOpenFilePicker' in window;
 
 /* ---------- État global ---------- */
 
@@ -38,6 +40,7 @@ let currentIndex = 0;
 let currentObjectUrl = null;
 let isPlaying = false;
 let playTimer = null;
+const sessionFilesByRoom = new Map();
 
 /* ---------- Petits utilitaires DOM ---------- */
 
@@ -169,35 +172,24 @@ async function refreshRoomView() {
   if (!room) { showPanel('empty'); return; }
 
   const record = await idbGet(sourceKey(room.id));
+  const session = sessionFilesByRoom.get(room.id) || [];
 
-  if (!record) {
+  if (!record && !session.length) {
     showNoSource(room);
     return;
   }
 
-  if (record.type === 'manual') {
-    showNoSource(room, true);
+  const normalized = normalizeRecord(record);
+  const handles = normalized.sources.flatMap(s => s.kind === 'directory' ? [s.handle] : s.handles);
+  const permissions = await Promise.all(handles.map(async h => {
+    try { return await h.queryPermission({ mode: 'read' }); } catch (_) { return 'denied'; }
+  }));
+  if (permissions.some(p => p !== 'granted')) {
+    $('reauthRoomName').textContent = room.name;
+    showPanel('permission');
     return;
   }
-
-  if (record.type === 'handle') {
-    showPanel('loading');
-    $('loadingDetail').textContent = `Vérification de l'accès au dossier de « ${room.name} »…`;
-
-    let perm;
-    try {
-      perm = await record.handle.queryPermission({ mode: 'read' });
-    } catch (e) {
-      perm = 'denied';
-    }
-
-    if (perm === 'granted') {
-      await scanAndShow(room, record.handle);
-    } else {
-      $('reauthRoomName').textContent = room.name;
-      showPanel('permission');
-    }
-  }
+  await scanAndShow(room, normalized);
 }
 
 function sourceKey(roomId) { return `src:${roomId}`; }
@@ -225,8 +217,10 @@ $('pickFolderBtn').addEventListener('click', async () => {
   if (!room || !HAS_FS_ACCESS) return;
   try {
     const handle = await window.showDirectoryPicker({ mode: 'read' });
-    await idbSet(sourceKey(room.id), { type: 'handle', handle });
-    await scanAndShow(room, handle);
+    const record = normalizeRecord(await idbGet(sourceKey(room.id)));
+    record.sources.push({ kind: 'directory', handle, excluded: [] });
+    await idbSet(sourceKey(room.id), record);
+    await scanAndShow(room, record);
   } catch (e) {
     if (e.name !== 'AbortError') console.error(e);
   }
@@ -234,7 +228,24 @@ $('pickFolderBtn').addEventListener('click', async () => {
 
 /* ---------- Choix de photos (Galerie / Photos / Fichiers) ---------- */
 
-$('pickFilesBtn').addEventListener('click', () => $('fileInputPhotos').click());
+$('pickFilesBtn').addEventListener('click', pickPhotos);
+$('addPhotosBtn').addEventListener('click', pickPhotos);
+
+async function pickPhotos() {
+  const room = getActiveRoom();
+  if (!room) return;
+  if (HAS_FILE_PICKER) {
+    try {
+      const handles = await window.showOpenFilePicker({ multiple: true, types: [{ description: 'Images', accept: { 'image/*': ['.jpg','.jpeg','.png','.webp','.gif','.bmp','.avif','.heic','.heif','.tif','.tiff'] } }] });
+      const record = normalizeRecord(await idbGet(sourceKey(room.id)));
+      record.sources.push({ kind: 'files', handles });
+      await idbSet(sourceKey(room.id), record);
+      await scanAndShow(room, record);
+    } catch (e) { if (e.name !== 'AbortError') console.error(e); }
+  } else {
+    $('fileInputPhotos').click();
+  }
+}
 
 $('fileInputPhotos').addEventListener('change', async (e) => {
   const room = getActiveRoom();
@@ -243,15 +254,14 @@ $('fileInputPhotos').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!files.length) return;
 
-  await idbSet(sourceKey(room.id), { type: 'manual' });
-
-  const existingKeys = new Set(currentFiles.map(f => f.name + f.size));
+  const session = sessionFilesByRoom.get(room.id) || [];
+  const existingKeys = new Set(session.map(f => f.name + ':' + f.size));
   const items = files
     .filter(f => IMAGE_RE.test(f.name))
-    .filter(f => !existingKeys.has(f.name + f.size))
-    .map(f => ({ name: f.name, path: f.name, size: f.size, getFile: () => Promise.resolve(f) }));
-
-  currentFiles = currentFiles.concat(items).sort((a, b) => a.path.localeCompare(b.path, 'fr'));
+    .filter(f => !existingKeys.has(f.name + ':' + f.size));
+  session.push(...items);
+  sessionFilesByRoom.set(room.id, session);
+  currentFiles = currentFiles.concat(items.map(f => ({ name:f.name, path:f.name, size:f.size, origin:{kind:'session', file:f}, getFile:() => Promise.resolve(f) }))).sort((a,b) => a.path.localeCompare(b.path,'fr'));
   if (!currentFiles.length) { showPanel('noPhotos'); return; }
   currentIndex = 0;
   showPanel('slideshow');
@@ -267,11 +277,10 @@ $('fileInputFolder').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!files.length) return;
 
-  await idbSet(sourceKey(room.id), { type: 'manual' });
-
+  sessionFilesByRoom.set(room.id, files.filter(f => IMAGE_RE.test(f.name)));
   currentFiles = files
     .filter(f => IMAGE_RE.test(f.name))
-    .map(f => ({ name: f.name, path: f.webkitRelativePath || f.name, getFile: () => Promise.resolve(f) }))
+    .map(f => ({ name: f.name, path: f.webkitRelativePath || f.name, origin:{kind:'session', file:f}, getFile: () => Promise.resolve(f) }))
     .sort((a, b) => a.path.localeCompare(b.path, 'fr'));
 
   if (!currentFiles.length) { showPanel('noPhotos'); return; }
@@ -291,13 +300,12 @@ if (!HAS_FS_ACCESS) {
 $('reauthorizeBtn').addEventListener('click', async () => {
   const room = getActiveRoom();
   if (!room) return;
-  const record = await idbGet(sourceKey(room.id));
-  if (!record || record.type !== 'handle') return;
+  const record = normalizeRecord(await idbGet(sourceKey(room.id)));
+  if (!record.sources.length) return;
   try {
-    const perm = await record.handle.requestPermission({ mode: 'read' });
-    if (perm === 'granted') {
-      await scanAndShow(room, record.handle);
-    }
+    const handles = record.sources.flatMap(s => s.kind === 'directory' ? [s.handle] : s.handles);
+    for (const handle of handles) await handle.requestPermission({ mode: 'read' });
+    await scanAndShow(room, record);
   } catch (e) { console.error(e); }
 });
 
@@ -319,19 +327,23 @@ $('sourceBtn').addEventListener('click', async () => {
   const room = getActiveRoom();
   if (!room) return;
   stopSlideshowTimer();
+  if (!confirm(`Retirer toutes les photos de « ${room.name} » ? Les fichiers d'origine ne seront pas supprimés.`)) return;
   await idbDelete(sourceKey(room.id));
+  sessionFilesByRoom.delete(room.id);
+  currentFiles = [];
   showNoSource(room);
 });
 
 /* ---------- Balayage récursif d'un dossier ---------- */
 
-async function collectImagesFromHandle(dirHandle) {
+async function collectImagesFromHandle(dirHandle, sourceIndex, excluded = []) {
   const results = [];
   async function walk(handle, path) {
     for await (const [name, entry] of handle.entries()) {
       if (entry.kind === 'file') {
         if (IMAGE_RE.test(name)) {
-          results.push({ name, path: path + name, getFile: () => entry.getFile() });
+          const itemPath = path + name;
+          if (!excluded.includes(itemPath)) results.push({ name, path: itemPath, origin:{kind:'directory', sourceIndex, path:itemPath}, getFile: () => entry.getFile() });
         }
       } else if (entry.kind === 'directory') {
         await walk(entry, path + name + '/');
@@ -343,11 +355,28 @@ async function collectImagesFromHandle(dirHandle) {
   return results;
 }
 
-async function scanAndShow(room, handle) {
+function normalizeRecord(record) {
+  if (!record) return { version: 2, sources: [] };
+  if (record.sources) return record;
+  if (record.type === 'handle' && record.handle) return { version: 2, sources: [{ kind:'directory', handle:record.handle, excluded:[] }] };
+  return { version: 2, sources: [] };
+}
+
+async function scanAndShow(room, record) {
   showPanel('loading');
   $('loadingDetail').textContent = `Lecture du dossier de « ${room.name} » (sous-dossiers inclus)…`;
   try {
-    currentFiles = await collectImagesFromHandle(handle);
+    const groups = await Promise.all(record.sources.map(async (source, sourceIndex) => {
+      if (source.kind === 'directory') return collectImagesFromHandle(source.handle, sourceIndex, source.excluded || []);
+      const items = [];
+      for (let fileIndex = 0; fileIndex < source.handles.length; fileIndex++) {
+        const handle = source.handles[fileIndex];
+        if (IMAGE_RE.test(handle.name)) items.push({ name:handle.name, path:handle.name, origin:{kind:'file', sourceIndex, fileIndex}, getFile:() => handle.getFile() });
+      }
+      return items;
+    }));
+    const session = (sessionFilesByRoom.get(room.id) || []).map(f => ({ name:f.name, path:f.name, size:f.size, origin:{kind:'session', file:f}, getFile:() => Promise.resolve(f) }));
+    currentFiles = groups.flat().concat(session).sort((a,b) => a.path.localeCompare(b.path,'fr'));
   } catch (e) {
     console.error(e);
     currentFiles = [];
@@ -362,14 +391,36 @@ $('rescanBtn').addEventListener('click', async () => {
   const room = getActiveRoom();
   if (!room) return;
   const record = await idbGet(sourceKey(room.id));
-  if (record && record.type === 'handle') {
+  if (record) {
     const keepPath = currentFiles[currentIndex] ? currentFiles[currentIndex].path : null;
-    await scanAndShow(room, record.handle);
+    await scanAndShow(room, normalizeRecord(record));
     if (keepPath) {
       const idx = currentFiles.findIndex(f => f.path === keepPath);
       if (idx >= 0) await showSlide(idx);
     }
   }
+});
+
+$('removePhotoBtn').addEventListener('click', async () => {
+  const room = getActiveRoom();
+  const item = currentFiles[currentIndex];
+  if (!room || !item) return;
+  if (!confirm(`Retirer « ${item.name} » de cette pièce ? Le fichier d'origine sera conservé.`)) return;
+  if (item.origin.kind === 'session') {
+    const session = sessionFilesByRoom.get(room.id) || [];
+    sessionFilesByRoom.set(room.id, session.filter(f => f !== item.origin.file));
+  } else {
+    const record = normalizeRecord(await idbGet(sourceKey(room.id)));
+    const source = record.sources[item.origin.sourceIndex];
+    if (item.origin.kind === 'directory') {
+      source.excluded = Array.from(new Set([...(source.excluded || []), item.origin.path]));
+    } else {
+      source.handles.splice(item.origin.fileIndex, 1);
+      if (!source.handles.length) record.sources.splice(item.origin.sourceIndex, 1);
+    }
+    await idbSet(sourceKey(room.id), record);
+  }
+  await refreshRoomView();
 });
 
 /* ---------- Diaporama ---------- */
