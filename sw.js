@@ -2,7 +2,7 @@
    Les photos ne sont jamais interceptées ni mises en cache : elles sont
    lues en direct depuis l'appareil de l'utilisateur via des blob: URLs. */
 
-const CACHE_NAME = 'maison-photos-shell-v4';
+const CACHE_NAME = 'maison-photos-shell-v6';
 
 const SHELL_FILES = [
   './',
@@ -30,7 +30,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.filter((k) => k.startsWith('maison-photos-shell-') && k !== CACHE_NAME).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });

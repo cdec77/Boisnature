@@ -449,6 +449,7 @@ function releaseCurrentImage() {
 
 async function showSlide(i) {
   if (!currentFiles.length) return;
+  resetZoom();
   const requestId = ++slideRequestId;
   currentIndex = ((i % currentFiles.length) + currentFiles.length) % currentFiles.length;
   const item = currentFiles[currentIndex];
@@ -551,24 +552,13 @@ $('fullscreenBtn').addEventListener('click', () => {
 
 /* Navigation clavier */
 document.addEventListener('keydown', (e) => {
+  if ($('photoSelection').open || !$('modalOverlay').classList.contains('panel--hidden')) return;
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
   if (panels.slideshow.classList.contains('panel--hidden')) return;
   if (e.key === 'ArrowRight') nextSlide();
   else if (e.key === 'ArrowLeft') prevSlide();
   else if (e.key === ' ') { e.preventDefault(); isPlaying ? stopSlideshowTimer() : startSlideshowTimer(); }
 });
-
-/* Balayage tactile */
-(function setupSwipe() {
-  const frame = document.querySelector('.slideshow__frame');
-  let startX = null;
-  frame.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, { passive: true });
-  frame.addEventListener('touchend', (e) => {
-    if (startX === null) return;
-    const dx = e.changedTouches[0].clientX - startX;
-    if (Math.abs(dx) > 45) (dx < 0 ? nextSlide() : prevSlide());
-    startX = null;
-  }, { passive: true });
-})();
 
 /* ---------- Gestion des pièces : ajout / édition ---------- */
 
@@ -690,5 +680,218 @@ async function init() {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 }
+
+
+/* ---------- Zoom et déplacement de la photo ---------- */
+const zoom = { scale: 1, x: 0, y: 0 };
+const pointers = new Map();
+let gesture = null;
+let swipeStart = null;
+let multiTouch = false;
+const photoFrame = document.querySelector('.slideshow__frame');
+
+function paintZoom() {
+  const img = $('slideImg');
+  const maxX = Math.max(0, (img.offsetWidth * zoom.scale - photoFrame.clientWidth) / 2);
+  const maxY = Math.max(0, (img.offsetHeight * zoom.scale - photoFrame.clientHeight) / 2);
+  zoom.x = Math.max(-maxX, Math.min(maxX, zoom.x));
+  zoom.y = Math.max(-maxY, Math.min(maxY, zoom.y));
+  img.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+  $('zoomResetBtn').textContent = `${Math.round(zoom.scale * 100)} %`;
+}
+
+function resetZoom() {
+  zoom.scale = 1;
+  zoom.x = 0;
+  zoom.y = 0;
+  paintZoom();
+}
+
+function setZoom(scale) {
+  stopSlideshowTimer();
+  zoom.scale = Math.max(1, Math.min(5, scale));
+  paintZoom();
+}
+
+function pointerGeometry() {
+  const points = [...pointers.values()];
+  const a = points[0];
+  const b = points[1] || a;
+  return {
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+    distance: Math.hypot(a.x - b.x, a.y - b.y),
+    scale: zoom.scale,
+    tx: zoom.x,
+    ty: zoom.y,
+  };
+}
+
+photoFrame.addEventListener('pointerdown', e => {
+  if (e.target.closest('button') || e.button > 0) return;
+  photoFrame.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 1) {
+    swipeStart = { x: e.clientX, y: e.clientY, scale: zoom.scale };
+    multiTouch = false;
+  } else {
+    multiTouch = true;
+    stopSlideshowTimer();
+  }
+  gesture = pointerGeometry();
+});
+
+photoFrame.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId) || !gesture) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const next = pointerGeometry();
+  if (pointers.size > 1 && gesture.distance > 0) {
+    zoom.scale = Math.max(1, Math.min(5, gesture.scale * next.distance / gesture.distance));
+    const rect = photoFrame.getBoundingClientRect();
+    const ratio = zoom.scale / gesture.scale;
+    zoom.x = next.x - rect.left - rect.width / 2 - (gesture.x - rect.left - rect.width / 2 - gesture.tx) * ratio;
+    zoom.y = next.y - rect.top - rect.height / 2 - (gesture.y - rect.top - rect.height / 2 - gesture.ty) * ratio;
+  } else if (zoom.scale > 1) {
+    zoom.x = gesture.tx + next.x - gesture.x;
+    zoom.y = gesture.ty + next.y - gesture.y;
+  }
+  paintZoom();
+});
+
+function endPointer(e) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (!pointers.size) {
+    if (e.type === 'pointerup' && !multiTouch && swipeStart && swipeStart.scale === 1) {
+      const dx = e.clientX - swipeStart.x;
+      const dy = e.clientY - swipeStart.y;
+      if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) dx < 0 ? nextSlide() : prevSlide();
+    }
+    swipeStart = null;
+    gesture = null;
+  } else {
+    gesture = pointerGeometry();
+  }
+}
+
+photoFrame.addEventListener('pointerup', endPointer);
+photoFrame.addEventListener('pointercancel', endPointer);
+photoFrame.addEventListener('lostpointercapture', endPointer);
+photoFrame.addEventListener('dblclick', e => {
+  if (!e.target.closest('button')) setZoom(zoom.scale > 1 ? 1 : 2);
+});
+$('slideImg').addEventListener('load', paintZoom);
+window.addEventListener('resize', paintZoom);
+$('zoomInBtn').addEventListener('click', () => setZoom(zoom.scale + 0.5));
+$('zoomOutBtn').addEventListener('click', () => setZoom(zoom.scale - 0.5));
+$('zoomResetBtn').addEventListener('click', resetZoom);
+
+/* ---------- Sélection multiple ---------- */
+const selectedPhotos = new Set();
+let selectionFiles = [];
+let thumbnailUrls = [];
+let selectionGeneration = 0;
+let thumbnailObserver = null;
+
+function updateSelection() {
+  $('selectionCount').textContent = `${selectedPhotos.size} / ${selectionFiles.length} sélectionnée(s)`;
+  $('removeSelectedBtn').disabled = selectedPhotos.size === 0;
+  $('photoGrid').querySelectorAll('input').forEach((input, index) => {
+    input.checked = selectedPhotos.has(index);
+  });
+}
+
+function cleanSelection() {
+  selectionGeneration++;
+  thumbnailObserver?.disconnect();
+  thumbnailUrls.forEach(url => URL.revokeObjectURL(url));
+  thumbnailUrls = [];
+  $('photoGrid').replaceChildren();
+  selectedPhotos.clear();
+}
+
+$('selectPhotosBtn').addEventListener('click', () => {
+  stopSlideshowTimer();
+  cleanSelection();
+  selectionFiles = currentFiles.slice();
+  const generation = selectionGeneration;
+  thumbnailObserver = new IntersectionObserver(entries => {
+    entries.filter(entry => entry.isIntersecting).forEach(async entry => {
+      thumbnailObserver.unobserve(entry.target);
+      const index = Number(entry.target.dataset.index);
+      try {
+        const file = await selectionFiles[index].getFile();
+        if (generation !== selectionGeneration) return;
+        const url = URL.createObjectURL(file);
+        thumbnailUrls.push(url);
+        entry.target.src = url;
+      } catch (_) { entry.target.alt = 'Aperçu indisponible'; }
+    });
+  }, { root: $('photoGrid'), rootMargin: '100px' });
+  selectionFiles.forEach((item, index) => {
+    const label = document.createElement('label');
+    label.className = 'photo-card';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.setAttribute('aria-label', `Sélectionner ${item.path}`);
+    checkbox.addEventListener('change', () => {
+      checkbox.checked ? selectedPhotos.add(index) : selectedPhotos.delete(index);
+      updateSelection();
+    });
+    const img = document.createElement('img');
+    img.alt = item.name;
+    img.dataset.index = index;
+    img.onerror = () => { img.alt = `Aperçu indisponible : ${item.name}`; };
+    const name = document.createElement('span');
+    name.textContent = item.path;
+    label.append(checkbox, img, name);
+    $('photoGrid').appendChild(label);
+    thumbnailObserver.observe(img);
+  });
+  updateSelection();
+  $('photoSelection').showModal();
+});
+
+$('closeSelectionBtn').addEventListener('click', () => $('photoSelection').close());
+$('photoSelection').addEventListener('close', cleanSelection);
+$('selectAllBtn').addEventListener('click', () => {
+  selectionFiles.forEach((_, index) => selectedPhotos.add(index));
+  updateSelection();
+});
+$('clearSelectionBtn').addEventListener('click', () => {
+  selectedPhotos.clear();
+  updateSelection();
+});
+
+// Filtrer les indices en une passe évite les décalages lors des retraits multiples.
+async function removePhotoItems(roomId, items) {
+  const record = normalizeRecord(await idbGet(sourceKey(roomId)));
+  const sessionRemoved = new Set(items.filter(i => i.origin.kind === 'session').map(i => i.origin.file));
+  record.sources = record.sources.map((source, sourceIndex) => {
+    const removed = items.filter(i => i.origin.sourceIndex === sourceIndex);
+    if (source.kind === 'directory') {
+      return { ...source, excluded: [...new Set([...(source.excluded || []), ...removed.map(i => i.origin.path)])] };
+    }
+    const indices = new Set(removed.map(i => i.origin.fileIndex));
+    return { ...source, handles: source.handles.filter((_, index) => !indices.has(index)) };
+  }).filter(source => source.kind === 'directory' || source.handles.length);
+  await idbSet(sourceKey(roomId), record);
+  sessionFilesByRoom.set(roomId, (sessionFilesByRoom.get(roomId) || []).filter(file => !sessionRemoved.has(file)));
+}
+
+$('removeSelectedBtn').addEventListener('click', async () => {
+  const roomId = activeRoomId;
+  const items = [...selectedPhotos].map(index => selectionFiles[index]);
+  if (!items.length || !confirm(`Retirer ${items.length} photo(s) de cette pièce ? Les fichiers d’origine seront conservés.`)) return;
+  $('removeSelectedBtn').disabled = true;
+  try {
+    await removePhotoItems(roomId, items);
+    $('photoSelection').close();
+    if (activeRoomId === roomId) await refreshRoomView();
+  } catch (error) {
+    alert(`Le retrait a échoué : ${error.message}`);
+    updateSelection();
+  }
+});
 
 init();
